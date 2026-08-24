@@ -7,7 +7,7 @@ An automated end-to-end data pipeline that extracts job application emails from 
 ## Architecture & Workflow
 
 * **Extract (Gmail API):** Scans the primary Gmail inbox using targeted queries, capturing both read and unread status updates over a rolling 24-hour window while filtering out marketing and crypto platform noise.
-* **Transform (Google Gemini SDK):** Leverages `gemini-3.5-flash` to parse unstructured email bodies—including multi-job LinkedIn digest emails—into a strict, validated 15-column JSON schema.
+* **Transform (Google Gemini SDK):** Leverages `gemini-3.5-flash` to parse unstructured email bodies including multi-job LinkedIn digest emails into a strict, validated 15-column JSON schema.
 * **Load (Google Sheets API & gspread):** Performs a safe database **upsert** using a composite primary key (`Company_Name` + `Job_Title`) to prevent duplicate entries and multi-role overwrites.
 * **Automate (GitHub Actions CI/CD):** Runs autonomously in the cloud three times daily via a cron schedule, injecting secure tokens via GitHub Secrets.
 
