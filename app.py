@@ -214,6 +214,18 @@ selected_theme = st.sidebar.radio(
 
 COLORS = THEMES[selected_theme]
 
+# NOTE on theming limits:
+# st.dataframe / st.data_editor render through Streamlit's built-in
+# "glide-data-grid" component, which draws its contents on an HTML
+# <canvas> element. Canvas pixels cannot be restyled with CSS, so the
+# THEMES/dashboard_styles block below (which works fine for metrics,
+# buttons, tabs, sidebar, etc.) has NO effect on table/grid coloring.
+# Those widgets always follow Streamlit's actual configured theme
+# (set via .streamlit/config.toml or the user's browser preference),
+# independent of this in-app Light/Dark toggle. If you want the grid
+# to match, the real fix is a .streamlit/config.toml [theme] block —
+# not anything achievable from inside this script with CSS.
+
 STATUS_COLORS = {
     "Applied": COLORS["primary"],
     "Screening": "#60A5FA",
@@ -557,42 +569,39 @@ st.markdown(
 # DATA ACCESS
 # ============================================================
 
-@st.cache_data(
-    ttl=300,
-    show_spinner=False,
-)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_sheet_data() -> pd.DataFrame:
-    """Load job application records from Google Sheets."""
+    creds = None
+    
+    # 1. Try loading from Streamlit Cloud Secrets first
+    try:
+        if "gcp_service_account" in st.secrets:
+            token_info = dict(st.secrets["gcp_service_account"])
+            if "token" in token_info and isinstance(token_info["token"], str):
+                import json
+                token_dict = json.loads(token_info["token"])
+                creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
+    except Exception:
+        pass  # Not running on Streamlit Cloud or secrets aren't set up yet
+    
+    # 2. Fallback to local token.json if it exists on your machine
+    if not creds and os.path.exists(TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
 
-    if not os.path.exists(TOKEN_PATH):
-        raise FileNotFoundError(
-            f"Authentication token not found at '{TOKEN_PATH}'."
-        )
+    # 3. If still no credentials, guide the user gracefully instead of crashing
+    if not creds:
+        st.error("Authentication credentials not found. Please ensure 'token.json' is in your project folder for local use, or Streamlit Secrets are configured for cloud deployment.")
+        st.stop()
 
-    credentials = Credentials.from_authorized_user_file(
-        TOKEN_PATH,
-        SCOPES,
-    )
+    if credentials_expired := (creds.expired and creds.refresh_token):
+        creds.refresh(Request())
 
-    if credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
+    if not creds.valid:
+        raise ValueError("Google credentials are invalid. Please reauthenticate.")
 
-    if not credentials.valid:
-        raise ValueError(
-            "Google credentials are invalid. "
-            "Reauthenticate to refresh token.json."
-        )
-
-    client = gspread.authorize(credentials)
-
-    worksheet = client.open_by_key(
-        SHEET_ID
-    ).sheet1
-
-    records = worksheet.get_all_records(
-        default_blank="",
-    )
-
+    client = gspread.authorize(creds)
+    worksheet = client.open_by_key(SHEET_ID).sheet1
+    records = worksheet.get_all_records(default_blank="")
     return pd.DataFrame(records)
 
 
@@ -962,6 +971,22 @@ def format_optional_number(
         return "—"
 
     return f"{value:,.0f}{suffix}"
+
+
+def format_display_date(
+    value: "pd.Timestamp | None",
+) -> str:
+    """Format a date for on-screen display.
+
+    Returns an empty string for missing values instead of relying on
+    st.column_config.DateColumn, which renders NaT/None as the
+    literal text "None" in the data grid.
+    """
+
+    if value is None or pd.isna(value):
+        return ""
+
+    return value.strftime("%d %b %Y")
 
 
 def normalize_dataframe(
@@ -1744,10 +1769,10 @@ def generate_insights(
             0
         ]
 
-        deadline_text = next_deadline[
-            "Action_Deadline"
-        ].strftime(
-            "%d %b %Y"
+        deadline_text = format_display_date(
+            next_deadline[
+                "Action_Deadline"
+            ]
         )
 
         insights.append(
@@ -2516,6 +2541,17 @@ def render_overview(
                 na_position="last",
             )
 
+            # Convert dates to display-ready strings *after* sorting
+            # (sorting still needs real datetimes) so the grid never
+            # has to render a raw NaT/None value itself.
+            attention_df["Action_Deadline"] = attention_df[
+                "Action_Deadline"
+            ].map(format_display_date)
+
+            attention_df["Interview_Date"] = attention_df[
+                "Interview_Date"
+            ].map(format_display_date)
+
             display_columns = [
                 "Priority",
                 "Company_Name",
@@ -2541,16 +2577,10 @@ def render_overview(
                         "Pipeline Stage"
                     ),
                     "Action_Deadline": (
-                        st.column_config.DateColumn(
-                            "Action Deadline",
-                            format="DD MMM YYYY",
-                        )
+                        "Action Deadline"
                     ),
                     "Interview_Date": (
-                        st.column_config.DateColumn(
-                            "Interview Date",
-                            format="DD MMM YYYY",
-                        )
+                        "Interview Date"
                     ),
                     "Days_Since_Update": (
                         st.column_config.NumberColumn(
@@ -2961,6 +2991,14 @@ def render_pipeline_analytics(
             )
 
         else:
+            interviews = interviews.copy()
+
+            # Convert to display-ready strings after sorting so
+            # the grid doesn't render a raw NaT/None cell.
+            interviews["Interview_Date"] = interviews[
+                "Interview_Date"
+            ].map(format_display_date)
+
             st.dataframe(
                 interviews[
                     [
@@ -2975,10 +3013,7 @@ def render_pipeline_analytics(
                 use_container_width=True,
                 column_config={
                     "Interview_Date": (
-                        st.column_config.DateColumn(
-                            "Interview Date",
-                            format="DD MMM YYYY",
-                        )
+                        "Interview Date"
                     ),
                     "Company_Name": "Company",
                     "Job_Title": "Job Title",
@@ -3668,6 +3703,10 @@ def render_application_explorer(
         if column in explorer_df.columns
     ]
 
+    # Build the CSV export from the *raw* (still-datetime) columns
+    # first, before we convert anything to display strings below —
+    # this keeps ISO-style dates in the downloaded file, which plays
+    # nicer with Excel/Sheets than the "DD MMM YYYY" display format.
     csv_data = (
         explorer_df[
             available_columns
@@ -3704,6 +3743,21 @@ def render_application_explorer(
             "matching applications."
         )
 
+    # Convert date columns to display-ready strings *after* the CSV
+    # export and *after* sorting, so the on-screen grid never has to
+    # render a raw NaT/None value (which Streamlit's DateColumn shows
+    # as the literal text "None").
+    for date_column in [
+        "Application_Date",
+        "Interview_Date",
+        "Action_Deadline",
+        "Last_Updated",
+    ]:
+        if date_column in explorer_df.columns:
+            explorer_df[date_column] = explorer_df[
+                date_column
+            ].map(format_display_date)
+
     st.dataframe(
         explorer_df[
             available_columns
@@ -3728,10 +3782,7 @@ def render_application_explorer(
                 "Job Family"
             ),
             "Application_Date": (
-                st.column_config.DateColumn(
-                    "Applied",
-                    format="DD MMM YYYY",
-                )
+                "Applied"
             ),
             "Current_Status": (
                 "Status"
@@ -3749,16 +3800,10 @@ def render_application_explorer(
                 "Posted Salary"
             ),
             "Interview_Date": (
-                st.column_config.DateColumn(
-                    "Interview",
-                    format="DD MMM YYYY",
-                )
+                "Interview"
             ),
             "Action_Deadline": (
-                st.column_config.DateColumn(
-                    "Deadline",
-                    format="DD MMM YYYY",
-                )
+                "Deadline"
             ),
             "Days_Open": (
                 st.column_config.NumberColumn(
@@ -3788,10 +3833,7 @@ def render_application_explorer(
                 )
             ),
             "Last_Updated": (
-                st.column_config.DateColumn(
-                    "Last Updated",
-                    format="DD MMM YYYY",
-                )
+                "Last Updated"
             ),
             "JD_Summary": (
                 st.column_config.TextColumn(
