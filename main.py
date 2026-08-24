@@ -62,7 +62,7 @@ def get_email_body(payload):
 def fetch_recent_job_emails(gmail_service):
     # Added crypto platforms to the exclusion list to save API quota
     query = (
-        "category:primary newer_than:2d "
+        "category:primary newer_than:1d "
         "(application OR interview OR applied OR rejection OR update) "
         "-Temu -turing -mercor -micro1 -outlier -remotasks -alignerr "
         "-binance -coinbase -crypto -kraken"

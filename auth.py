@@ -8,8 +8,7 @@ SCOPES = [
 ]
 
 def generate_new_token():
-    # Make sure this matches the exact name of your credentials file!
-    # If yours is named 'credentials.json.json', update it below.
+    
     flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
     creds = flow.run_local_server(port=0)
 
