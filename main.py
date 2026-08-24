@@ -171,7 +171,7 @@ def upsert_to_sheets(gc, data):
     )
 
     if existing_row_index is not None:
-        # Fixed the deprecation warning by using explicit keyword arguments
+        # Explicit keyword arguments
         sheet.update(
             values=[row_data],
             range_name=f"A{existing_row_index + 2}:O{existing_row_index + 2}"
@@ -193,7 +193,7 @@ def run_pipeline():
     gmail_service = build('gmail', 'v1', credentials=creds)
     gc = gspread.authorize(creds)
     
-    print("Scanning inbox for recent job updates (last 48 hours)...")
+    print("Scanning inbox for recent job updates (last 24 hours)...")
     emails = fetch_recent_job_emails(gmail_service)
     
     if not emails:
