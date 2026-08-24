@@ -27,9 +27,9 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 GEMINI_MODEL = "gemini-3.5-flash"
 
 SCOPES = [
-    'https://www.googleapis.com/auth/gmail.modify', 
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/calendar.events' # Added for Google Calendar integration
+    'https://www.googleapis.com/auth/gmail.modify', # GMAIL integration
+    'https://www.googleapis.com/auth/spreadsheets', # Google Shee integration
+    'https://www.googleapis.com/auth/calendar.events' # Google Calendar integration
 ]
 
 # ==========================================
