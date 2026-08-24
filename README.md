@@ -35,7 +35,7 @@ An automated end-to-end data pipeline that extracts job application emails from 
 ```
 
 1. Clone the repository:
-git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
+git clone [https://github.com/your-username/your-repo-name.git]
 cd your-repo-name
 
 2. Install dependencies:
@@ -43,7 +43,6 @@ pip install google-api-python-client google-auth gspread google-genai python-dot
 
 3. Configure Environment Variables:
 Create a local .env file in the root directory:
-Code snippet
 GEMINI_API_KEY=your_gemini_api_key_here
 
 4. Run Locally:

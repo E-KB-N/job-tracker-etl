@@ -1,10 +1,11 @@
 import os
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# The exact updated scopes we need
+# Scopes we need
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/spreadsheets'
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/calendar.events'
 ]
 
 def generate_new_token():

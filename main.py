@@ -28,7 +28,8 @@ GEMINI_MODEL = "gemini-3.5-flash"
 
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.modify', 
-    'https://www.googleapis.com/auth/spreadsheets'
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/calendar.events' # Added for Google Calendar integration
 ]
 
 # ==========================================
@@ -60,7 +61,6 @@ def get_email_body(payload):
     return ""
 
 def fetch_recent_job_emails(gmail_service):
-    # Added crypto platforms to the exclusion list to save API quota
     query = (
         "category:primary newer_than:1d "
         "(application OR interview OR applied OR rejection OR update) "
@@ -141,8 +141,56 @@ def parse_email_with_llm(email_text, sender):
     return []
 
 # ==========================================
-# 4. LOAD (GOOGLE SHEETS UPSERT)
+# 4. LOAD (GOOGLE SHEETS & CALENDAR)
 # ==========================================
+def sync_event_to_calendar(creds, job_data):
+    """
+    Creates an all-day calendar event if an Interview_Date or actionable Deadline is present.
+    """
+    company = job_data.get("Company_Name")
+    title = job_data.get("Job_Title", "Job Event")
+    interview_date = job_data.get("Interview_Date")
+    action_deadline = job_data.get("Action_Deadline")
+    
+    event_date = None
+    event_title_prefix = ""
+    
+    if interview_date:
+        event_date = interview_date
+        event_title_prefix = "Interview: "
+    elif action_deadline and job_data.get("Current_Status") == "Interviewing":
+        event_date = action_deadline
+        event_title_prefix = "Deadline: "
+        
+    if not event_date:
+        return
+        
+    try:
+        calendar_service = build('calendar', 'v3', credentials=creds)
+        
+        event_body = {
+            'summary': f"{event_title_prefix}{company} - {title}",
+            'description': (
+                f"Role: {title}\n"
+                f"Company: {company}\n"
+                f"Status: {job_data.get('Current_Status')}\n"
+                f"Stage: {job_data.get('Pipeline_Stage')}\n"
+                f"Platform: {job_data.get('Platform_Source')}"
+            ),
+            'start': {'date': event_date},
+            'end': {'date': event_date},
+        }
+        
+        created_event = calendar_service.events().insert(
+            calendarId='primary', 
+            body=event_body
+        ).execute()
+        
+        print(f" -> [Calendar] Added event: {created_event.get('summary')} for {event_date}")
+        
+    except Exception as e:
+        print(f" -> [Calendar Error] Could not create event: {e}")
+
 def upsert_to_sheets(gc, data):
     if not data or data.get("Not_Job_Related"):
         return False
@@ -171,7 +219,6 @@ def upsert_to_sheets(gc, data):
     )
 
     if existing_row_index is not None:
-        # Explicit keyword arguments
         sheet.update(
             values=[row_data],
             range_name=f"A{existing_row_index + 2}:O{existing_row_index + 2}"
@@ -212,6 +259,10 @@ def run_pipeline():
                 if job_data and isinstance(job_data, dict) and job_data.get("Company_Name"):
                     print(f" -> Upserting: {job_data.get('Company_Name')} | {job_data.get('Job_Title')} | {job_data.get('Current_Status')}")
                     success = upsert_to_sheets(gc, job_data)
+                    
+                    if success:
+                        sync_event_to_calendar(creds, job_data)
+                        
                     time.sleep(2)
                 
         time.sleep(12) 
