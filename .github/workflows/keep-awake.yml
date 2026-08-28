@@ -1,0 +1,15 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    # Runs every 6 hours. 
+    - cron: "0 */6 * * *"
+  workflow_dispatch: # Allows manual run from the Actions tab on GitHub.
+
+jobs:
+  ping-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send HTTP request to Streamlit app
+        run: |
+          curl -s -o /dev/null -w "%{http_code}\n" https://ekbnjobtrackeretl.streamlit.app/
