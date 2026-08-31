@@ -2,8 +2,8 @@ name: Keep Streamlit App Alive
 
 on:
   schedule:
-    # Runs every 6 hours. 
-    - cron: "0 */6 * * *"
+    # Runs every 2 hours.
+    - cron: "0 */2 * * *"
   workflow_dispatch: # Allows manual run from the Actions tab on GitHub.
 
 jobs:
