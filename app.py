@@ -577,11 +577,9 @@ def load_sheet_data() -> pd.DataFrame:
     try:
         if "gcp_service_account" in st.secrets:
             token_info = dict(st.secrets["gcp_service_account"])
-            if "token" in token_info and isinstance(token_info["token"], str):
-                import json
-                token_dict = json.loads(token_info["token"])
-                creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
-    except Exception:
+            if "token" in token_info:
+                creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+    except Exception as e:
         pass  # Not running on Streamlit Cloud or secrets aren't set up yet
     
     # 2. Fallback to local token.json if it exists on your machine
@@ -603,7 +601,6 @@ def load_sheet_data() -> pd.DataFrame:
     worksheet = client.open_by_key(SHEET_ID).sheet1
     records = worksheet.get_all_records(default_blank="")
     return pd.DataFrame(records)
-
 
 # ============================================================
 # DATA CLEANING
